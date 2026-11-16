@@ -813,6 +813,41 @@ exit:
 }
 /* END_CASE */
 
+/* BEGIN_CASE depends_on:MBEDTLS_X509_CRT_PARSE_C */
+void x509_verify_der(data_t *crt_der, char *cn_name_str, int result,
+                     int flags_result)
+{
+    mbedtls_x509_crt crt;
+    mbedtls_x509_crt ca;
+    uint32_t flags = 0;
+    char *cn_name = NULL;
+    int ret;
+
+    mbedtls_x509_crt_init(&crt);
+    mbedtls_x509_crt_init(&ca);
+    MD_OR_USE_PSA_INIT();
+
+    if (strcmp(cn_name_str, "NULL") != 0) {
+        cn_name = cn_name_str;
+    }
+
+    TEST_EQUAL(mbedtls_x509_crt_parse_der(&crt, crt_der->x, crt_der->len), 0);
+    TEST_EQUAL(mbedtls_x509_crt_parse_der(&ca, crt_der->x, crt_der->len), 0);
+
+    ret = mbedtls_x509_crt_verify_with_profile(&crt, &ca, NULL,
+                                               &profile_all, cn_name,
+                                               &flags, NULL, NULL);
+
+    TEST_EQUAL(ret, result);
+    TEST_EQUAL(flags, (uint32_t) flags_result);
+
+exit:
+    mbedtls_x509_crt_free(&crt);
+    mbedtls_x509_crt_free(&ca);
+    MD_OR_USE_PSA_DONE();
+}
+/* END_CASE */
+
 /* BEGIN_CASE depends_on:MBEDTLS_FS_IO:MBEDTLS_X509_CRT_PARSE_C:MBEDTLS_X509_CRL_PARSE_C:MBEDTLS_X509_TRUSTED_CERTIFICATE_CALLBACK */
 void x509_verify_ca_cb_failure(char *crt_file, char *ca_file, char *name,
                                int exp_ret)

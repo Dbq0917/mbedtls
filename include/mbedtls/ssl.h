@@ -3945,6 +3945,11 @@ void mbedtls_ssl_conf_sig_algs(mbedtls_ssl_config *conf,
  *
  * \note           Maximum hostname length #MBEDTLS_SSL_MAX_HOST_NAME_LEN.
  *
+ * \note           If \p hostname is an IP address literal, it is matched
+ *                 against the iPAddress entries of the certificate's
+ *                 subjectAltName extension. DNS names and DNS wildcards in
+ *                 the certificate are not considered in this case.
+ *
  * \note           If the hostname is \c NULL on a client, then the server
  *                 is not authenticated: it only needs to have a valid
  *                 certificate, not a certificate matching its name.

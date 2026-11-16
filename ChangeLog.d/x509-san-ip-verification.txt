@@ -1,0 +1,8 @@
+Security
+   * Fix certificate name verification so that an IP address reference is
+     only matched against iPAddress subject alternative names. Previously a
+     dNSName entry, including a DNS wildcard, could match the textual form
+     of an IP address and accept a certificate whose iPAddress entries did
+     not match. Applications passing IP addresses to
+     mbedtls_x509_crt_verify() or mbedtls_ssl_set_hostname() should re-test
+     certificates that contain both dNSName and iPAddress entries.

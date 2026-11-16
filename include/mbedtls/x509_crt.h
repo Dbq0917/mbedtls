@@ -647,7 +647,9 @@ int mbedtls_x509_crt_verify_info(char *buf, size_t size, const char *prefix,
  *                 supported, while the URI subtype is partially supported:
  *                 only exact matching, without any normalization procedures
  *                 described in 7.4 of RFC5280, will result in a positive
- *                 URI verification.
+ *                 URI verification. An IP address literal is only matched
+ *                 against subjectAltName iPAddress entries, never against
+ *                 dNSName entries or DNS wildcards.
  *                 This may be \c NULL if the CN need not be verified.
  * \param flags    The address at which to store the result of the verification.
  *                 If the verification couldn't be completed, the flag value is

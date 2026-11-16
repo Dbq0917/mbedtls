@@ -2888,19 +2888,13 @@ static int x509_crt_check_cn(const mbedtls_x509_buf *name,
 }
 
 static int x509_crt_check_san_ip(const mbedtls_x509_sequence *san,
-                                 const char *cn, size_t cn_len)
+                                 const unsigned char *ip, size_t ip_len)
 {
-    uint32_t ip[4];
-    cn_len = mbedtls_x509_crt_parse_cn_inet_pton(cn, ip);
-    if (cn_len == 0) {
-        return -1;
-    }
-
     for (const mbedtls_x509_sequence *cur = san; cur != NULL; cur = cur->next) {
         const unsigned char san_type = (unsigned char) cur->buf.tag &
                                        MBEDTLS_ASN1_TAG_VALUE_MASK;
         if (san_type == MBEDTLS_X509_SAN_IP_ADDRESS &&
-            cur->buf.len == cn_len && memcmp(cur->buf.p, ip, cn_len) == 0) {
+            cur->buf.len == ip_len && memcmp(cur->buf.p, ip, ip_len) == 0) {
             return 0;
         }
     }
@@ -2924,13 +2918,82 @@ static int x509_crt_check_san_uri(const mbedtls_x509_sequence *san,
 }
 
 /*
+ * Return 1 if cn has the lexical form of an IPv4 address, 0 otherwise.
+ * This is used to avoid falling back to DNS matching when an address-like
+ * reference could not be parsed as an address.
+ */
+static int x509_crt_is_ipv4_literal(const char *cn, size_t cn_len)
+{
+    int has_dot = 0;
+
+    for (size_t i = 0; i < cn_len; i++) {
+        if (cn[i] == '.') {
+            has_dot = 1;
+        } else if (cn[i] < '0' || cn[i] > '9') {
+            return 0;
+        }
+    }
+
+    return has_dot;
+}
+
+/*
+ * Return 1 if cn has the lexical form of an IPv6 address, 0 otherwise.
+ * This is used to avoid falling back to DNS matching when an address-like
+ * reference could not be parsed as an address.
+ */
+static int x509_crt_is_ipv6_literal(const char *cn, size_t cn_len)
+{
+    size_t colon_count = 0;
+
+    for (size_t i = 0; i < cn_len; i++) {
+        const char c = cn[i];
+
+        if (c == ':') {
+            colon_count++;
+        } else if (!((c >= '0' && c <= '9') ||
+                     (c >= 'a' && c <= 'f') ||
+                     (c >= 'A' && c <= 'F') ||
+                     c == '.')) {
+            return 0;
+        }
+    }
+
+    return colon_count >= 2;
+}
+
+/*
  * Check for SAN match, see RFC 5280 Section 4.2.1.6
  */
 static int x509_crt_check_san(const mbedtls_x509_sequence *san,
                               const char *cn, size_t cn_len)
 {
-    int san_ip = 0;
+    uint32_t ip[4];
+    size_t ip_len = mbedtls_x509_crt_parse_cn_inet_pton(cn, ip);
     int san_uri = 0;
+
+    /*
+     * If the reference identifier is an IP address, it can only match an
+     * iPAddress subject alternative name, and the comparison must be done
+     * on the address octets (RFC 2818 section 3.1). In particular, do not
+     * let a dNSName entry or a DNS wildcard match the textual form of an
+     * IP address. Otherwise an address mismatch could be accepted because
+     * the certificate also contains an unrelated DNS name.
+     */
+    if (ip_len != 0) {
+        return x509_crt_check_san_ip(san, (const unsigned char *) ip, ip_len);
+    }
+
+    /*
+     * An address-looking reference that failed to parse is invalid. Do not
+     * let it match a dNSName entry: a wildcard could otherwise accept a
+     * malformed address (for example, 999.98.99.100 against *.98.99.100).
+     */
+    if (x509_crt_is_ipv4_literal(cn, cn_len) ||
+        x509_crt_is_ipv6_literal(cn, cn_len)) {
+        return -1;
+    }
+
     /* Prioritize DNS name over other subtypes due to popularity */
     for (const mbedtls_x509_sequence *cur = san; cur != NULL; cur = cur->next) {
         switch ((unsigned char) cur->buf.tag & MBEDTLS_ASN1_TAG_VALUE_MASK) {
@@ -2940,7 +3003,6 @@ static int x509_crt_check_san(const mbedtls_x509_sequence *san,
                 }
                 break;
             case MBEDTLS_X509_SAN_IP_ADDRESS:
-                san_ip = 1;
                 break;
             case MBEDTLS_X509_SAN_UNIFORM_RESOURCE_IDENTIFIER:
                 san_uri = 1;
@@ -2948,11 +3010,6 @@ static int x509_crt_check_san(const mbedtls_x509_sequence *san,
             /* (We may handle other types here later.) */
             default: /* Unrecognized type */
                 break;
-        }
-    }
-    if (san_ip) {
-        if (x509_crt_check_san_ip(san, cn, cn_len) == 0) {
-            return 0;
         }
     }
     if (san_uri) {
